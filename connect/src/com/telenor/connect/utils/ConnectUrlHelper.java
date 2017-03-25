@@ -51,7 +51,7 @@ public class ConnectUrlHelper {
         Uri.Builder builder = new Uri.Builder();
         builder
                 .scheme(basePath.scheme())
-                .authority(basePath.host())
+                .encodedAuthority(basePath.host() + ":" + basePath.port())
                 .appendPath(OAUTH_PATH)
                 .appendPath("authorize");
         for (Map.Entry<String, String> entry : authParameters.entrySet()) {

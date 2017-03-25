@@ -1,10 +1,16 @@
 package com.telenor.connect;
 
+import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
+
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.net.Uri;
 import android.os.Bundle;
 import android.support.v4.app.Fragment;
@@ -23,6 +29,8 @@ import com.telenor.connect.utils.ConnectUtils;
 import com.telenor.connect.utils.RestHelper;
 import com.telenor.connect.utils.Validator;
 
+import java.net.CookieHandler;
+import java.net.CookieManager;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -39,6 +47,9 @@ public final class ConnectSdk {
     private static Context sContext;
     private static String sLastAuthState;
     private static ArrayList<Locale> sLocales;
+    private static ConnectivityManager connectivityManager;
+    private static Network cellularNetwork;
+    private static Network wifiNetwork;
     private static String sPaymentCancelUri;
     private static String sPaymentSuccessUri;
     private static String sRedirectUri;
@@ -194,6 +205,12 @@ public final class ConnectSdk {
         }
         sLastAuthState = parameters.get("state");
 
+//        try {
+//            return Uri.parse("https://api.ipify.org?format=json");
+//        } catch (final Exception e) {
+//            return null;
+//        }
+
         return ConnectUrlHelper.getAuthorizeUri(
                 parameters,
                 getClientId(),
@@ -202,12 +219,21 @@ public final class ConnectSdk {
                 getConnectApiUrl());
     }
 
+
+
     public static HttpUrl getConnectApiUrl() {
         HttpUrl.Builder builder = new HttpUrl.Builder();
         builder.scheme("https");
         builder.host(sUseStaging
                 ? "connect.staging.telenordigital.com"
                 : "connect.telenordigital.com");
+
+
+//        builder.scheme("http");
+//        builder.host("10.0.0.21");
+//        builder.port(8107);
+
+
         return builder.build();
     }
 
@@ -244,6 +270,18 @@ public final class ConnectSdk {
     public static String getRedirectUri() {
         Validator.sdkInitialized();
         return sRedirectUri;
+    }
+
+    public static ConnectivityManager getConnectivityManager() {
+        return connectivityManager;
+    }
+
+    public static Network getCellularNetwork() {
+        return cellularNetwork;
+    }
+
+    public static Network getWifiNetwork() {
+        return wifiNetwork;
     }
 
     private static ArrayList<String> getUiLocales() {
@@ -304,6 +342,57 @@ public final class ConnectSdk {
                 RestHelper.getConnectApi(getConnectApiUrl().toString()),
                 sClientId,
                 sRedirectUri);
+
+        connectivityManager = (ConnectivityManager) getContext()
+                .getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (null == connectivityManager) {
+            throw new ConnectException(
+                    "ConnectivityManager is null, cannot try to force a mobile connection");
+        }
+
+        CookieManager cookieManager = new CookieManager();
+        CookieHandler.setDefault(cookieManager);
+
+        initalizeCellularNetwork();
+        initalizeWiFiNetwork();
+    }
+
+    @TargetApi(21)
+    public static void initalizeCellularNetwork() {
+        NetworkRequest.Builder builder = new NetworkRequest.Builder();
+
+        builder.addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        builder.addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR);
+
+        NetworkRequest networkRequest = builder.build();
+        connectivityManager.requestNetwork(
+                networkRequest,
+                new ConnectivityManager.NetworkCallback() {
+                    @Override
+                    public void onAvailable(Network network) {
+                        cellularNetwork = network;
+                    }
+                }
+        );
+    }
+
+    @TargetApi(21)
+    public static void initalizeWiFiNetwork() {
+        NetworkRequest.Builder builder = new NetworkRequest.Builder();
+
+        builder.addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        builder.addTransportType(NetworkCapabilities.TRANSPORT_WIFI);
+
+        NetworkRequest networkRequest = builder.build();
+        connectivityManager.requestNetwork(
+                networkRequest,
+                new ConnectivityManager.NetworkCallback() {
+                    @Override
+                    public void onAvailable(Network network) {
+                        wifiNetwork = network;
+                    }
+                }
+        );
     }
 
     public static void setLocales(Locale... locales) {

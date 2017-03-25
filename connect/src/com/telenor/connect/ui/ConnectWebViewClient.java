@@ -1,6 +1,7 @@
 package com.telenor.connect.ui;
 
 import android.Manifest;
+import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
@@ -10,6 +11,7 @@ import android.os.Build;
 import android.view.View;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
@@ -22,8 +24,19 @@ import com.telenor.connect.sms.SmsPinParseUtil;
 import com.telenor.connect.utils.ConnectUtils;
 import com.telenor.connect.utils.JavascriptUtil;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.CookieHandler;
+import java.net.CookieManager;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLConnection;
 import java.util.List;
 import java.util.regex.Pattern;
+
+import javax.net.ssl.HttpsURLConnection;
 
 public class ConnectWebViewClient extends WebViewClient implements SmsHandler, InstructionHandler {
 
@@ -91,6 +104,109 @@ public class ConnectWebViewClient extends WebViewClient implements SmsHandler, I
             return true;
         }
         return false;
+    }
+
+    @Override
+    @TargetApi(22)
+    public WebResourceResponse shouldInterceptRequest (WebView view, WebResourceRequest request) {
+        System.out.println(request.getUrl().toString());
+        WebResourceResponse response = null;
+        if (request.getUrl().toString().contains("oauth/authorize")
+            || request.getUrl().toString().contains("header-inject/hei")
+            || request.getUrl().toString().contains("id/heidetect?action=continue"))  {
+            if (ConnectSdk.getCellularNetwork() != null) {
+                response = fetchUrlThroghCellular(view, request);
+
+                if (response != null) {
+                    if (request.getUrl().toString().contains("oauth/authorize")) {
+                        response.setEncoding("UTF-8");
+                        response.setMimeType("text/html");
+                    }
+                    if (request.getUrl().toString().contains("header-inject/hei")
+                        || request.getUrl().toString().contains("header-inject/inject")) {
+                        response.setMimeType("image/png");
+                        response.setStatusCodeAndReasonPhrase(200, "OK");
+                    }
+                }
+            }
+        }
+        return response;
+    }
+
+    private static URL getURL(final String url) {
+        final URL _url;
+        try {
+            _url = new URL(url);
+        } catch (final MalformedURLException e) {
+            return null;
+        }
+        return _url;
+    }
+
+    @TargetApi(22)
+    public WebResourceResponse fetchUrlThroghCellular(WebView view, WebResourceRequest request) {
+        final URL url = getURL(request.getUrl().toString());
+        HttpURLConnection connection;
+        try {
+             connection = (HttpURLConnection) ConnectSdk.getCellularNetwork()
+                    .openConnection(url);
+
+//
+//             connection = (HttpURLConnection) ConnectSdk.getWifiNetwork()
+//                    .openConnection(url);
+
+
+            String newUrl_ = connection.getHeaderField("Location");
+            int responseCode = connection.getResponseCode();
+            if (responseCode != HttpsURLConnection.HTTP_OK) {
+                if (responseCode == 303) {
+                    String newUrl = connection.getHeaderField("Location");
+
+                    if (newUrl.contains("telenordigital-connectexample-android://oauth2callback/?code="))
+                        ConnectUtils.parseAuthCode(newUrl, connectCallback);
+
+                    return null;
+
+                }
+                if (responseCode == 302) {
+                    String newUrl = connection.getHeaderField("Location");
+                    HttpURLConnection newConnection = (HttpURLConnection) ConnectSdk.getCellularNetwork()
+                            .openConnection(getURL(newUrl));
+                    int newResponseCode = newConnection.getResponseCode();
+                    if (newResponseCode == 200) {
+                        WebResourceResponse response = new WebResourceResponse(newConnection.getContentType(),
+                                newConnection.getContentEncoding(),
+                                newConnection.getInputStream());
+                        return response;
+                    }
+                } else {
+                    return null;
+                }
+//                connection.disconnect();
+//                return null;
+            }
+
+//            String newUrl = connection.getHeaderField("Location");
+//            BufferedReader in = new BufferedReader(
+//                    new InputStreamReader(connection.getInputStream()));
+//            String inputLine;
+//            StringBuffer html = new StringBuffer();
+//
+//            while ((inputLine = in.readLine()) != null) {
+//                html.append(inputLine);
+//            }
+//            in.close();
+
+
+            WebResourceResponse response = new WebResourceResponse(connection.getContentType(),
+                    connection.getContentEncoding(),
+                    connection.getInputStream());
+            return response;
+
+        } catch (final IOException e) {
+            System.err.print(e.toString());
+            return null;
+        }
     }
 
     @Override

@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 public class ConnectLoginButton extends ConnectButton {
 
@@ -92,6 +93,19 @@ public class ConnectLoginButton extends ConnectButton {
         this.customLoadingLayout = customLoadingLayout;
     }
 
+    public static int parseIp(String address) {
+        int result = 0;
+
+        // iterate over each octet
+        for(String part : address.split(Pattern.quote("."))) {
+            // shift the previously parsed bits over by 1 byte
+            result = result << 8;
+            // set the low order bits to the current octet
+            result |= Integer.parseInt(part);
+        }
+        return result;
+    }
+
     private class LoginClickListener implements OnClickListener {
 
         @Override
@@ -111,16 +125,19 @@ public class ConnectLoginButton extends ConnectButton {
                 try {
                     parameters.put("claims", ClaimsParameterFormatter.asJson(claims));
                 } catch (JSONException e) {
-                    throw new ConnectException("Failed to create claims Json. claims="+claims, e);
+                    throw new ConnectException("Failed to create claims Json. claims=" + claims, e);
                 }
             }
 
-            if (getLoginParameters() != null && !getLoginParameters().isEmpty()){
+            if (getLoginParameters() != null && !getLoginParameters().isEmpty()) {
                 parameters.putAll(getLoginParameters());
             }
 
             if (customLoadingLayout == NO_CUSTOM_LAYOUT) {
-                ConnectSdk.authenticate(getActivity(), parameters, requestCode);
+                ConnectSdk.authenticate(
+                        getActivity(),
+                        parameters,
+                        requestCode);
             } else {
                 ConnectSdk.authenticate(getActivity(),
                         parameters,
