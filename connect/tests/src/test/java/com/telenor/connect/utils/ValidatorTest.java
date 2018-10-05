@@ -1,25 +1,44 @@
 package com.telenor.connect.utils;
 
-import com.telenor.connect.ConnectException;
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.text.TextUtils;
+
 import com.telenor.connect.ConnectNotInitializedException;
 import com.telenor.connect.ConnectSdk;
 import com.telenor.connect.id.ConnectTokensTO;
 import com.telenor.connect.id.IdToken;
 
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.BDDMockito;
 import org.powermock.api.mockito.PowerMockito;
 import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
+import org.robolectric.annotation.Config;
 
-import static org.hamcrest.CoreMatchers.is;
-import static org.hamcrest.MatcherAssert.assertThat;
+import static org.mockito.Matchers.anyInt;
+import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @RunWith(PowerMockRunner.class)
-@PrepareForTest({ConnectSdk.class, IdTokenValidator.class})
+@Config(sdk = 18)
+@PrepareForTest({ConnectSdk.class, IdTokenValidator.class, TextUtils.class, RestHelper.class})
 public class ValidatorTest {
+
+    @Before
+    public void mockConnectSdk() {
+        Context context = mock(Context.class);
+        SharedPreferences sharedPrefs = mock(SharedPreferences.class);
+        PowerMockito.mockStatic(TextUtils.class);
+        when(sharedPrefs.getString(anyString(), anyString())).thenReturn(null);
+        when(context.getSharedPreferences(anyString(), anyInt())).thenReturn(sharedPrefs);
+
+        PowerMockito.mockStatic(ConnectSdk.class);
+        BDDMockito.given(ConnectSdk.isInitialized()).willReturn(true);
+    }
 
     @Test(expected = NullPointerException.class)
     public void nullArgumentOnNotNullValidationThrows() {
@@ -43,32 +62,15 @@ public class ValidatorTest {
 
     @Test(expected = ConnectNotInitializedException.class)
     public void notInitializedSdkThrows() {
-        PowerMockito.mockStatic(ConnectSdk.class);
         BDDMockito.given(ConnectSdk.isInitialized()).willReturn(false);
 
         Validator.sdkInitialized();
     }
 
     public void initializedSdkDoesNotThrow() {
-        PowerMockito.mockStatic(ConnectSdk.class);
         BDDMockito.given(ConnectSdk.isInitialized()).willReturn(true);
 
         Validator.sdkInitialized();
-    }
-
-    @Test(expected = ConnectException.class)
-    public void validateAuthenticationStateThrowsOnUnEqualState() {
-        PowerMockito.mockStatic(ConnectSdk.class);
-        BDDMockito.given(ConnectSdk.getLastAuthenticationState()).willReturn("some state");
-
-        Validator.validateAuthenticationState("not same state");
-    }
-
-    public void validateAuthenticationStateDoesNotThrowOnEqualState() {
-        PowerMockito.mockStatic(ConnectSdk.class);
-        BDDMockito.given(ConnectSdk.getLastAuthenticationState()).willReturn("some state");
-
-        Validator.validateAuthenticationState("some state");
     }
 
     @Test
@@ -156,37 +158,5 @@ public class ValidatorTest {
                 null);
 
         Validator.validateTokens(connectTokensTO, null);
-    }
-
-    @Test
-    public void validStateReturnsTrueWhenCurrentStateIsNull() {
-        PowerMockito.mockStatic(ConnectSdk.class);
-        BDDMockito.given(ConnectSdk.getLastAuthenticationState()).willReturn(null);
-
-        assertThat(Validator.validState("whatever"), is(true));
-    }
-
-    @Test
-    public void validStateReturnsTrueWhenCurrentStateIsEmpty() {
-        PowerMockito.mockStatic(ConnectSdk.class);
-        BDDMockito.given(ConnectSdk.getLastAuthenticationState()).willReturn("");
-
-        assertThat(Validator.validState("whatever"), is(true));
-    }
-
-    @Test
-    public void validStateReturnsTrueWhenCurrentStateMatchesGivenState() {
-        PowerMockito.mockStatic(ConnectSdk.class);
-        BDDMockito.given(ConnectSdk.getLastAuthenticationState()).willReturn("abc");
-
-        assertThat(Validator.validState("abc"), is(true));
-    }
-
-    @Test
-    public void validStateReturnsFalseWhenCurrentStateDoesNotMatchGivenState() {
-        PowerMockito.mockStatic(ConnectSdk.class);
-        BDDMockito.given(ConnectSdk.getLastAuthenticationState()).willReturn("xyz");
-
-        assertThat(Validator.validState("abc"), is(false));
     }
 }

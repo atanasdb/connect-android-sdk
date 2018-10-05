@@ -1,6 +1,7 @@
 package com.telenor.connect.ui;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.content.IntentFilter;
 import android.support.annotation.NonNull;
 import android.view.View;
@@ -29,17 +30,19 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Matchers.any;
+import static org.mockito.Matchers.anyString;
 import static org.mockito.Matchers.argThat;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.powermock.api.mockito.PowerMockito.doNothing;
 import static org.powermock.api.mockito.PowerMockito.mockStatic;
 import static org.powermock.api.mockito.PowerMockito.verifyStatic;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(manifest = "src/main/AndroidManifest.xml", sdk = 18)
+@Config(sdk = 18)
 @PowerMockIgnore({ "org.mockito.*", "org.robolectric.*", "android.*" })
 @PrepareForTest({ConnectSdk.class, ConnectUtils.class})
 public class ConnectWebViewClientTest {
@@ -56,7 +59,7 @@ public class ConnectWebViewClientTest {
         Activity activity = mock(Activity.class);
         WebView webView = mock(WebView.class);
         View loadingView = mock(View.class);
-        View errorView = mock(View.class);
+        WebErrorView errorView = mock(WebErrorView.class);
 
         ConnectWebViewClient connectWebViewClient
                 = new ConnectWebViewClient(activity, webView, loadingView, errorView, callback);
@@ -75,7 +78,7 @@ public class ConnectWebViewClientTest {
         Activity activity = mock(Activity.class);
         WebView webView = mock(WebView.class);
         View loadingView = mock(View.class);
-        View errorView = mock(View.class);
+        WebErrorView errorView = mock(WebErrorView.class);
 
         ConnectWebViewClient connectWebViewClient
                 = new ConnectWebViewClient(activity, webView, loadingView, errorView, callback);
@@ -91,7 +94,7 @@ public class ConnectWebViewClientTest {
         Activity activity = mock(Activity.class);
         WebView webView = mock(WebView.class);
         View loadingView = mock(View.class);
-        View errorView = mock(View.class);
+        WebErrorView errorView = mock(WebErrorView.class);
 
         ConnectWebViewClient connectWebViewClient
                 = new ConnectWebViewClient(activity, webView, loadingView, errorView, callback);
@@ -110,7 +113,7 @@ public class ConnectWebViewClientTest {
         Activity activity = mock(Activity.class);
         WebView webView = mock(WebView.class);
         View loadingView = mock(View.class);
-        View errorView = mock(View.class);
+        WebErrorView errorView = mock(WebErrorView.class);
 
         ConnectWebViewClient connectWebViewClient
                 = new ConnectWebViewClient(activity, webView, loadingView, errorView, callback);
@@ -145,7 +148,7 @@ public class ConnectWebViewClientTest {
     }
 
     @Test
-    public void urlsThatDoNotStartWithPaymentCancelOrSuccessOrRedirectUriDoesNotOverrideLoading() {
+    public void urlsThatDoNotStartWithCancelOrSuccessOrRedirectUriDoesNotOverrideLoading() {
         mockStatic(ConnectSdk.class);
         given(ConnectSdk.isInitialized()).willReturn(true);
 
@@ -153,66 +156,18 @@ public class ConnectWebViewClientTest {
         Activity activity = mock(Activity.class);
         WebView webView = mock(WebView.class);
         View loadingView = mock(View.class);
-        View errorView = mock(View.class);
+        WebErrorView errorView = mock(WebErrorView.class);
 
         ConnectWebViewClient connectWebViewClient
                 = new ConnectWebViewClient(activity, webView, loadingView, errorView, callback);
 
         boolean result = connectWebViewClient.shouldOverrideUrlLoading(
                 webView,
-                "something not payment or redirect");
+                "something not redirect");
 
         assertThat(result, is(false));
     }
-
-    @Test
-    public void urlsThatStartWithPaymentSuccessUriFinishesActivityWithOk() {
-        mockStatic(ConnectSdk.class);
-        given(ConnectSdk.isInitialized()).willReturn(true);
-        given(ConnectSdk.getPaymentSuccessUri()).willReturn("success-uri");
-
-        ConnectCallback callback = mock(ConnectCallback.class);
-        Activity activity = mock(Activity.class);
-        WebView webView = mock(WebView.class);
-        View loadingView = mock(View.class);
-        View errorView = mock(View.class);
-
-        ConnectWebViewClient connectWebViewClient
-                = new ConnectWebViewClient(activity, webView, loadingView, errorView, callback);
-
-        boolean result = connectWebViewClient.shouldOverrideUrlLoading(
-                webView,
-                "success-uri");
-
-        assertThat(result, is(true));
-        verify(activity).setResult(Activity.RESULT_OK);
-        verify(activity).finish();
-    }
-
-    @Test
-    public void urlsThatStartWithPaymentCancelUriFinishesActivityWithCancel() {
-        mockStatic(ConnectSdk.class);
-        given(ConnectSdk.isInitialized()).willReturn(true);
-        given(ConnectSdk.getPaymentCancelUri()).willReturn("cancel-uri");
-
-        ConnectCallback callback = mock(ConnectCallback.class);
-        Activity activity = mock(Activity.class);
-        WebView webView = mock(WebView.class);
-        View loadingView = mock(View.class);
-        View errorView = mock(View.class);
-
-        ConnectWebViewClient connectWebViewClient
-                = new ConnectWebViewClient(activity, webView, loadingView, errorView, callback);
-
-        boolean result = connectWebViewClient.shouldOverrideUrlLoading(
-                webView,
-                "cancel-uri");
-
-        assertThat(result, is(true));
-        verify(activity).setResult(Activity.RESULT_CANCELED);
-        verify(activity).finish();
-    }
-
+    
     @Test
     public void urlsThatStartWithRedirectUriCallsParseAuthCode() {
         mockStatic(ConnectSdk.class);
@@ -221,13 +176,16 @@ public class ConnectWebViewClientTest {
 
         mockStatic(ConnectUtils.class);
         doNothing().when(ConnectUtils.class);
-        ConnectUtils.parseAuthCode(eq("redirect-uri"), any(ParseTokenCallback.class));
+        ConnectUtils.parseAuthCode(eq("redirect-uri"), anyString(), any(ParseTokenCallback.class));
 
         ConnectCallback callback = mock(ConnectCallback.class);
         Activity activity = mock(Activity.class);
+        Intent intent = mock(Intent.class);
+        when(intent.getStringExtra(ConnectUtils.LOGIN_AUTH_URI)).thenReturn("redirect-uri");
+        when(activity.getIntent()).thenReturn(intent);
         WebView webView = mock(WebView.class);
         View loadingView = mock(View.class);
-        View errorView = mock(View.class);
+        WebErrorView errorView = mock(WebErrorView.class);
 
         ConnectWebViewClient connectWebViewClient
                 = new ConnectWebViewClient(activity, webView, loadingView, errorView, callback);
@@ -238,6 +196,6 @@ public class ConnectWebViewClientTest {
 
         assertThat(result, is(true));
         verifyStatic();
-        ConnectUtils.parseAuthCode(eq("redirect-uri"), any(ParseTokenCallback.class));
+        ConnectUtils.parseAuthCode(eq("redirect-uri"), anyString(), any(ParseTokenCallback.class));
     }
 }

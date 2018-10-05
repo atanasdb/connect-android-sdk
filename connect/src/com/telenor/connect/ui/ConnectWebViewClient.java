@@ -1,20 +1,27 @@
 package com.telenor.connect.ui;
 
 import android.Manifest;
+import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
+import android.net.Network;
+import android.net.Uri;
 import android.os.Build;
+import android.support.annotation.RequiresApi;
+import android.util.Log;
 import android.view.View;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 import com.telenor.connect.ConnectCallback;
 import com.telenor.connect.ConnectSdk;
+import com.telenor.connect.WellKnownAPI;
 import com.telenor.connect.sms.SmsBroadcastReceiver;
 import com.telenor.connect.sms.SmsCursorUtil;
 import com.telenor.connect.sms.SmsHandler;
@@ -22,8 +29,18 @@ import com.telenor.connect.sms.SmsPinParseUtil;
 import com.telenor.connect.utils.ConnectUtils;
 import com.telenor.connect.utils.JavascriptUtil;
 
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.InetAddress;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.UnknownHostException;
 import java.util.List;
 import java.util.regex.Pattern;
+
+import static java.net.HttpURLConnection.HTTP_MOVED_PERM;
+import static java.net.HttpURLConnection.HTTP_MOVED_TEMP;
+import static java.net.HttpURLConnection.HTTP_SEE_OTHER;
 
 public class ConnectWebViewClient extends WebViewClient implements SmsHandler, InstructionHandler {
 
@@ -46,7 +63,7 @@ public class ConnectWebViewClient extends WebViewClient implements SmsHandler, I
             = new IntentFilter("android.provider.Telephony.SMS_RECEIVED");
     private final Activity activity;
     private final View loadingView;
-    private final View errorView;
+    private final WebErrorView errorView;
     private final WebView webView;
     private final SmsBroadcastReceiver smsBroadcastReceiver;
     private final ConnectCallback connectCallback;
@@ -61,7 +78,7 @@ public class ConnectWebViewClient extends WebViewClient implements SmsHandler, I
             Activity activity,
             WebView webView,
             View loadingView,
-            View errorView,
+            WebErrorView errorView,
             ConnectCallback callback) {
         this.webView = webView;
         this.activity = activity;
@@ -75,27 +92,106 @@ public class ConnectWebViewClient extends WebViewClient implements SmsHandler, I
     public boolean shouldOverrideUrlLoading(WebView view, String url) {
         if (ConnectSdk.getRedirectUri() != null
                 && url.startsWith(ConnectSdk.getRedirectUri())) {
-            ConnectUtils.parseAuthCode(url, connectCallback);
-            return true;
-        }
-        if (ConnectSdk.getPaymentCancelUri() != null
-                && url.startsWith(ConnectSdk.getPaymentCancelUri())) {
-            activity.setResult(Activity.RESULT_CANCELED);
-            activity.finish();
-            return true;
-        }
-        if (ConnectSdk.getPaymentSuccessUri() != null
-                && url.startsWith(ConnectSdk.getPaymentSuccessUri())) {
-            activity.setResult(Activity.RESULT_OK);
-            activity.finish();
+            ConnectUtils.parseAuthCode(url, getOriginalState(), connectCallback);
             return true;
         }
         return false;
     }
 
+    private String getOriginalState() {
+        String url = activity.getIntent().getStringExtra(ConnectUtils.LOGIN_AUTH_URI);
+        return Uri.parse(url).getQueryParameter("state");
+    }
+
+    @Override
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+    public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+        if (!ConnectSdk.isCellularDataNetworkConnected()
+                || ConnectSdk.isCellularDataNetworkDefault()) {
+            return null;
+        }
+        if (shouldFetchThroughCellular(request.getUrl().toString())) {
+            return fetchUrlTroughCellular(request.getUrl().toString());
+        }
+        return null;
+    }
+
+    public boolean shouldFetchThroughCellular(String url) {
+        WellKnownAPI.WellKnownConfig wellKnownConfig =
+                (WellKnownAPI.WellKnownConfig) this.activity
+                .getIntent()
+                .getExtras()
+                .get(ConnectUtils.WELL_KNOWN_CONFIG_EXTRA);
+        if (wellKnownConfig == null ||
+                (wellKnownConfig.getNetworkAuthenticationTargetIps().isEmpty()
+                 && wellKnownConfig.getNetworkAuthenticationTargetUrls().isEmpty())) {
+            return false;
+        }
+        if (!wellKnownConfig.getNetworkAuthenticationTargetUrls().isEmpty()) {
+            for (String urlPrefix : wellKnownConfig.getNetworkAuthenticationTargetUrls()) {
+                if (url.contains(urlPrefix)) {
+                    return true;
+                }
+            }
+            return false;
+        } else {
+            String hostIp;
+            try {
+                String host = (new URL(url)).getHost();
+                hostIp = InetAddress.getByName(host).getHostAddress();
+            } catch (MalformedURLException | UnknownHostException e) {
+                return false;
+            }
+            return wellKnownConfig
+                    .getNetworkAuthenticationTargetIps()
+                    .contains(hostIp);
+        }
+
+    }
+
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+    public WebResourceResponse fetchUrlTroughCellular(String originalUrl) {
+        String newUrl = originalUrl;
+        int attempts = 0;
+        Network interfaceToUse = ConnectSdk.getCellularNetwork();
+        do {
+            int responseCode;
+            try {
+                HttpURLConnection connection
+                        = (HttpURLConnection)interfaceToUse.openConnection(new URL(newUrl));
+                connection.setInstanceFollowRedirects(false);
+                connection.connect();
+                responseCode = connection.getResponseCode();
+                attempts += 1;
+                if (responseCode != HTTP_SEE_OTHER
+                    && responseCode != HTTP_MOVED_TEMP
+                    && responseCode != HTTP_MOVED_PERM) {
+                    // Rely on the WebView to close the input stream when finished fetching data
+                    return new WebResourceResponse(
+                            connection.getContentType(),
+                            connection.getContentEncoding(),
+                            connection.getInputStream());
+                }
+                newUrl = connection.getHeaderField("Location");
+                // Close the input stream, but do not disconnect the connection as its socket might
+                // be reused during the next request.
+                connection.getInputStream().close();
+            } catch (final IOException e) {
+                return null;
+            }
+            interfaceToUse = shouldFetchThroughCellular(newUrl)
+                    ? ConnectSdk.getCellularNetwork()
+                    : ConnectSdk.getDefaultNetwork();
+        } while (attempts <= ConnectSdk.MAX_REDIRECTS_TO_FOLLOW_FOR_HE);
+        return null;
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
     public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
         super.onReceivedError(view, request, error);
+        String errorText = error.getDescription() + " (" + error.getErrorCode() + ")";
+        errorView.setErrorText(errorText, request.getUrl().toString());
         errorView.setVisibility(View.VISIBLE);
     }
 
@@ -104,6 +200,8 @@ public class ConnectWebViewClient extends WebViewClient implements SmsHandler, I
     public void onReceivedError(WebView view, int errorCode,
                                 String description, String failingUrl) {
         super.onReceivedError(view, errorCode, description, failingUrl);
+        String errorText = description + " (" + errorCode + ")";
+        errorView.setErrorText(errorText, failingUrl);
         errorView.setVisibility(View.VISIBLE);
     }
 
@@ -242,9 +340,16 @@ public class ConnectWebViewClient extends WebViewClient implements SmsHandler, I
         webView.postDelayed(new Runnable() {
             @Override
             public void run() {
-                Cursor cursor = SmsCursorUtil.getSmsCursor(activity,
-                        pageLoadStarted-CHECK_FOR_SMS_BACK_IN_TIME_MILLIS);
-                if (cursor == null) {
+                Cursor cursor = null;
+                try {
+                    cursor = SmsCursorUtil.getSmsCursor(activity,
+                            pageLoadStarted-CHECK_FOR_SMS_BACK_IN_TIME_MILLIS);
+                } catch (SecurityException e) {
+                    Log.e(ConnectUtils.LOG_TAG, "Failed to acquire SMS cursor", e);
+                    return;
+                }
+
+                if (cursor == null || cursor.getCount() <= 0) {
                     return;
                 }
 

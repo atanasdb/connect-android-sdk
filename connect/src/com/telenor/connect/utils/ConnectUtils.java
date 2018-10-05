@@ -15,15 +15,27 @@ public class ConnectUtils {
     public static final String LOGIN_ACTION = "com.telenor.connect.LOGIN_ACTION";
     public static final String LOGIN_AUTH_URI = "com.telenor.connect.LOGIN_AUTH_URI";
     public static final String LOGIN_STATE = "com.telenor.connect.LOGIN_STATE";
-    public static final String PAYMENT_ACTION = "com.telenor.connect.PAYMENT_ACTION";
     public static final String CUSTOM_LOADING_SCREEN_EXTRA
             = "com.telenor.connect.CUSTOM_LOADING_SCREEN_EXTRA";
+    public static final String WELL_KNOWN_CONFIG_EXTRA = "com.telenor.connect.WELL_KNOWN_CONFIG";
 
-    public static void parseAuthCode(String callbackUrl, ConnectCallback callback) {
+    public static void parseAuthCode(String callbackUrl,
+                                     String originalState,
+                                     ConnectCallback callback) {
         Validator.notNullOrEmpty(callbackUrl, "callbackUrl");
 
         Uri uri = Uri.parse(callbackUrl);
-        Validator.validateAuthenticationState(uri.getQueryParameter("state"));
+
+        String state = uri.getQueryParameter("state");
+        if (!originalState.equals(state)) {
+            Map<String, String> errorParams = new HashMap<>();
+            errorParams.put("error", "state_changed");
+            errorParams.put(
+                    "error_description",
+                    "The state parameter was changed between authentication and now");
+            callback.onError(errorParams);
+            return;
+        }
         if (uri.getQueryParameter("error") != null) {
             Map<String, String> errorParams = new HashMap<>();
             errorParams.put("error", uri.getQueryParameter("error"));
@@ -34,7 +46,7 @@ public class ConnectUtils {
 
         Map<String, String> successParams = new HashMap<>();
         successParams.put("code", uri.getQueryParameter("code"));
-        successParams.put("state", uri.getQueryParameter("state"));
+        successParams.put("state", state);
         callback.onSuccess(successParams);
     }
 

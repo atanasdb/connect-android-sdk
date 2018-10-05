@@ -2,7 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.telenor.connect.connectidexample" >
 
-    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_SMS" />
 
@@ -21,6 +20,12 @@
             </intent-filter>
         </activity>
         <activity android:name=".SignInActivity" >
+            <!-- enable this filter to activate chrome custom tabs and sso <intent-filter>
+                <data android:scheme="@string/connect_redirect_uri_scheme" />
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+            </intent-filter>-->
         </activity>
         <activity
             android:name="com.telenor.connect.ui.ConnectActivity"
@@ -34,9 +39,6 @@
         <meta-data
             android:name="com.telenor.connect.REDIRECT_URI"
             android:value="@string/connect_redirect_uri" />
-        <meta-data
-            android:name="com.telenor.connect.USE_STAGING"
-            android:value="true" />
     </application>
 
 </manifest>

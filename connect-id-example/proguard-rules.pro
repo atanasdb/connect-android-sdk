@@ -1,17 +1,35 @@
-# Add project specific ProGuard rules here.
-# By default, the flags in this file are appended to flags specified
-# in C:\Users\Casper\AppData\Local\Android\sdk/tools/proguard/proguard-android.txt
-# You can edit the include path and order by changing the proguardFiles
-# directive in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Connect SDK
+-keep class com.telenor.** { *; }
 
-# Add any project specific keep options here:
+# Retrofit 2: https://github.com/square/retrofit#r8--proguard
+# Retain generic type information for use by reflection by converters and adapters.
+-keepattributes Signature
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Retain service method parameters.
+-keepclassmembers,allowshrinking,allowobfuscation interface * {
+    @retrofit2.http.* <methods>;
+}
+
+# Ignore annotation used for build tooling.
+-dontwarn org.codehaus.mojo.animal_sniffer.IgnoreJRERequirement
+
+# OkHttp 3: https://github.com/square/okhttp#proguard
+# Okio: https://github.com/square/okio#proguard
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn javax.annotation.**
+-dontwarn org.conscrypt.**
+# A resource is loaded with a relative path so the package of this class must be preserved.
+-keepnames class okhttp3.internal.publicsuffix.PublicSuffixDatabase
+
+# Also you must note that if you are using GSON for conversion from JSON to POJO representation, you must ignore those POJO classes from being obfuscated.
+# Here include the POJO's that have you have created for mapping JSON response to POJO for example.
+
+# GSON: https://github.com/google/gson/blob/master/examples/android-proguard-example/proguard.cfg
+# For using GSON @Expose annotation
+-keepattributes *Annotation*
+# Gson specific classes
+-dontwarn sun.misc.**
+
+# bouncycastle
+-dontwarn org.bouncycastle.**

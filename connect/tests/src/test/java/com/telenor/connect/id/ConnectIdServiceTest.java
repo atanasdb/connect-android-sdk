@@ -1,22 +1,18 @@
 package com.telenor.connect.id;
 
 import com.telenor.connect.ConnectNotSignedInException;
-import com.telenor.connect.ConnectRefreshTokenMissingException;
 import com.telenor.connect.utils.Validator;
 
-import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.Matchers;
-import org.powermock.core.classloader.annotations.PowerMockIgnore;
 import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.junit4.rule.PowerMockRule;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 
 import java.util.Date;
 
-import retrofit.Callback;
+import retrofit2.Call;
+import retrofit2.Response;
 
 import static junit.framework.Assert.fail;
 import static org.hamcrest.CoreMatchers.is;
@@ -29,134 +25,162 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(manifest = "src/main/AndroidManifest.xml", sdk = 18)
-@PowerMockIgnore({ "org.mockito.*", "org.robolectric.*", "android.*" })
+@Config(sdk = 18)
 @PrepareForTest({Validator.class})
 public class ConnectIdServiceTest {
 
-    @Rule
-    public PowerMockRule rule = new PowerMockRule(); // needed to activate PowerMock
-
     @Test
     public void getAccessTokenRetrievesFromTokenStoreWhenNull() {
-        TokenStore tokenStore = mock(TokenStore.class);
+        ConnectStore connectStore = mock(ConnectStore.class);
         ConnectTokens connectTokens = mock(ConnectTokens.class);
         final String value = "access token";
         when(connectTokens.getAccessToken()).thenReturn(value);
-        when(tokenStore.get()).thenReturn(connectTokens);
+        when(connectStore.get()).thenReturn(connectTokens);
         ConnectAPI connectApi = mock(ConnectAPI.class);
 
-        ConnectIdService connectIdService = new ConnectIdService(tokenStore, connectApi, "", "");
+        ConnectIdService connectIdService = new ConnectIdService(connectStore, connectApi, "", "");
 
         String accessToken = connectIdService.getAccessToken();
         assertThat(accessToken, is(value));
-        verify(tokenStore).get();
+        verify(connectStore).get();
     }
 
     @Test
     public void getAccessTokenFetchesFromMemoryWhenAlreadyLoaded() {
-        TokenStore tokenStore = mock(TokenStore.class);
+        ConnectStore connectStore = mock(ConnectStore.class);
         ConnectTokens connectTokens = mock(ConnectTokens.class);
         final String value = "access token";
         when(connectTokens.getAccessToken()).thenReturn(value);
-        when(tokenStore.get()).thenReturn(connectTokens);
+        when(connectStore.get()).thenReturn(connectTokens);
         ConnectAPI connectApi = mock(ConnectAPI.class);
 
-        ConnectIdService connectIdService = new ConnectIdService(tokenStore, connectApi, "", "");
+        ConnectIdService connectIdService = new ConnectIdService(connectStore, connectApi, "", "");
 
         connectIdService.getAccessToken();
         connectIdService.getAccessToken();
 
-        verify(tokenStore, times(1)).get();
+        verify(connectStore, times(1)).get();
     }
 
     @Test(expected = ConnectNotSignedInException.class)
     public void getUserInfoMissingAccessTokenThrows() {
-        TokenStore tokenStore = mock(TokenStore.class);
+        ConnectStore connectStore = mock(ConnectStore.class);
         ConnectAPI connectApi = mock(ConnectAPI.class);
-        ConnectIdService connectIdService = new ConnectIdService(tokenStore, connectApi, "", "");
+        ConnectIdService connectIdService = new ConnectIdService(connectStore, connectApi, "", "");
 
         connectIdService.getUserInfo(null);
     }
 
     @Test
     public void getUserInfoCallsGetUserInfo() {
-        TokenStore tokenStore = mock(TokenStore.class);
+        ConnectStore connectStore = mock(ConnectStore.class);
         ConnectTokens connectTokens = mock(ConnectTokens.class);
         final String value = "access token";
         when(connectTokens.getAccessToken()).thenReturn(value);
-        when(tokenStore.get()).thenReturn(connectTokens);
+        when(connectStore.get()).thenReturn(connectTokens);
 
         ConnectAPI connectApi = mock(ConnectAPI.class);
-        ConnectIdService connectIdService = new ConnectIdService(tokenStore, connectApi, "", "");
+        Call call = mock(Call.class);
+        when(connectApi.getUserInfo(anyString())).thenReturn(call);
+        ConnectIdService connectIdService = new ConnectIdService(connectStore, connectApi, "", "");
 
         connectIdService.getUserInfo(null);
-        verify(connectApi).getUserInfo("Bearer access token", null);
+        verify(connectApi).getUserInfo("Bearer access token");
     }
 
-    @Test(expected = ConnectRefreshTokenMissingException.class)
-    public void getValidAccessTokenThrowsWhenTokensAreMissing() {
-        TokenStore tokenStore = mock(TokenStore.class);
-        when(tokenStore.get()).thenReturn(null);
+    @Test
+    public void getValidAccessTokenCallsNoSignedInUserWhenTokensAreMissing() {
+        ConnectStore connectStore = mock(ConnectStore.class);
+        when(connectStore.get()).thenReturn(null);
 
         ConnectAPI connectApi = mock(ConnectAPI.class);
-        ConnectIdService connectIdService = new ConnectIdService(tokenStore, connectApi, "", "");
-
+        ConnectIdService connectIdService = new ConnectIdService(connectStore, connectApi, "", "");
         connectIdService.getValidAccessToken(new AccessTokenCallback() {
             @Override
-            public void onSuccess(String accessToken) {
+            public void success(String accessToken) {
+                fail();
             }
+
             @Override
-            public void onError(Object errorData) {
+            public void unsuccessfulResult(Response response, boolean userDataRemoved) {
+                fail();
+            }
+
+            @Override
+            public void failure(Call<ConnectTokensTO> call, Throwable error) {
+                fail();
+            }
+
+            @Override
+            public void noSignedInUser() {
+                return; // success
             }
         });
     }
 
     @Test
     public void getValidAccessTokenCallsUpdateTokensWhenAccessTokenIsExpired() {
-        TokenStore tokenStore = mock(TokenStore.class);
+        ConnectStore connectStore = mock(ConnectStore.class);
         ConnectTokens connectTokens = mock(ConnectTokens.class);
         when(connectTokens.accessTokenHasExpired()).thenReturn(true);
         when(connectTokens.getRefreshToken()).thenReturn("refresh_token");
-        when(tokenStore.get()).thenReturn(connectTokens);
+        when(connectStore.get()).thenReturn(connectTokens);
 
         ConnectAPI connectApi = mock(ConnectAPI.class);
-        ConnectIdService connectIdService = new ConnectIdService(tokenStore, connectApi, "", "");
+        Call call = mock(Call.class);
+        when(connectApi.refreshAccessTokens(anyString(), anyString(), anyString()))
+                .thenReturn(call);
+        ConnectIdService connectIdService = new ConnectIdService(connectStore, connectApi, "", "");
 
         connectIdService.getValidAccessToken(new AccessTokenCallback() {
             @Override
-            public void onSuccess(String accessToken) {
-            }
+            public void success(String accessToken) {}
+
             @Override
-            public void onError(Object errorData) {
-            }
+            public void unsuccessfulResult(Response response, boolean userDataRemoved) {}
+
+            @Override
+            public void failure(Call<ConnectTokensTO> call, Throwable error) {}
+
+            @Override
+            public void noSignedInUser() {}
         });
 
         verify(connectApi).refreshAccessTokens(
                 anyString(),
                 eq("refresh_token"),
-                anyString(),
-                Matchers.<Callback<ConnectTokensTO>>any());
+                anyString());
     }
 
     @Test
     public void getValidAccessTokenCallsCallbackWhenAccessTokenIsntExpired() {
-        TokenStore tokenStore = mock(TokenStore.class);
+        ConnectStore connectStore = mock(ConnectStore.class);
         ConnectTokens connectTokens = mock(ConnectTokens.class);
         when(connectTokens.accessTokenHasExpired()).thenReturn(false);
         when(connectTokens.getAccessToken()).thenReturn("access_token");
-        when(tokenStore.get()).thenReturn(connectTokens);
+        when(connectStore.get()).thenReturn(connectTokens);
 
         ConnectAPI connectApi = mock(ConnectAPI.class);
-        ConnectIdService connectIdService = new ConnectIdService(tokenStore, connectApi, "", "");
+        ConnectIdService connectIdService = new ConnectIdService(connectStore, connectApi, "", "");
 
         connectIdService.getValidAccessToken(new AccessTokenCallback() {
             @Override
-            public void onSuccess(String accessToken) {
+            public void success(String accessToken) {
                 assertThat(accessToken, is("access_token"));
             }
+
             @Override
-            public void onError(Object errorData) {
+            public void unsuccessfulResult(Response response, boolean userDataRemoved) {
+                fail();
+            }
+
+            @Override
+            public void failure(Call<ConnectTokensTO> call, Throwable error) {
+                fail();
+            }
+
+            @Override
+            public void noSignedInUser() {
                 fail();
             }
         });
@@ -164,34 +188,34 @@ public class ConnectIdServiceTest {
 
     @Test
     public void getAccessTokenExpirationTimeRetrievesFromTokenStoreWhenNull() {
-        TokenStore tokenStore = mock(TokenStore.class);
+        ConnectStore connectStore = mock(ConnectStore.class);
         ConnectTokens connectTokens = mock(ConnectTokens.class);
         Date value = new Date();
         when(connectTokens.getExpirationDate()).thenReturn(value);
-        when(tokenStore.get()).thenReturn(connectTokens);
+        when(connectStore.get()).thenReturn(connectTokens);
         ConnectAPI connectApi = mock(ConnectAPI.class);
 
-        ConnectIdService connectIdService = new ConnectIdService(tokenStore, connectApi, "", "");
+        ConnectIdService connectIdService = new ConnectIdService(connectStore, connectApi, "", "");
 
         Date date = connectIdService.getAccessTokenExpirationTime();
         assertThat(date, is(value));
-        verify(tokenStore).get();
+        verify(connectStore).get();
     }
 
     @Test
     public void getAccessTokenExpirationTimeFetchesFromMemoryWhenAlreadyLoaded() {
-        TokenStore tokenStore = mock(TokenStore.class);
+        ConnectStore connectStore = mock(ConnectStore.class);
         ConnectTokens connectTokens = mock(ConnectTokens.class);
         Date value = new Date();
         when(connectTokens.getExpirationDate()).thenReturn(value);
-        when(tokenStore.get()).thenReturn(connectTokens);
+        when(connectStore.get()).thenReturn(connectTokens);
         ConnectAPI connectApi = mock(ConnectAPI.class);
 
-        ConnectIdService connectIdService = new ConnectIdService(tokenStore, connectApi, "", "");
+        ConnectIdService connectIdService = new ConnectIdService(connectStore, connectApi, "", "");
 
         connectIdService.getAccessTokenExpirationTime();
         connectIdService.getAccessTokenExpirationTime();
 
-        verify(tokenStore, times(1)).get();
+        verify(connectStore, times(1)).get();
     }
 }
